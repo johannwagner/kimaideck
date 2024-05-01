@@ -1,0 +1,5 @@
+kimai:
+  api:
+    url: https://kimai.example.com/api/
+    user: foo
+    token: ""
