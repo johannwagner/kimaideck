@@ -44,9 +44,6 @@ def main() -> int:
 
                 if t.is_alive():
                     t.join()
-        except Exception as e:
-            logger.error("Encountered an exception during rendering, resetting...")
-            print(e)
         except KeyboardInterrupt as ki:
             is_running = False
         finally:
@@ -56,7 +53,7 @@ def main() -> int:
                 pass
             
             streamdeck.close()
-
+            time.sleep(5)
 
     return 0
 
