@@ -18,7 +18,7 @@ class Kimai:
         return urllib.parse.urljoin(self.base_url, path)
 
     def get_active_timetracking(self):
-        resp = self.session.get(self._url('timesheets/active/'))
+        resp = self.session.get(self._url('timesheets/active/'), timeout=10)
         active_list = resp.json()
         if len(active_list) > 0:
             return active_list[0]
@@ -35,21 +35,21 @@ class Kimai:
         return resp.json()
 
     def stop_timetracking(self, timesheet_id):
-        resp = self.session.get(self._url(f'timesheets/{timesheet_id}/stop'))
+        resp = self.session.get(self._url(f'timesheets/{timesheet_id}/stop'), timeout=10)
         return resp.json()
 
     def get_customers(self):
-        resp = self.session.get(self._url(f'customers'))
+        resp = self.session.get(self._url(f'customers'), timeout=10)
         return resp.json()
 
     def get_all_projects(self):
-        resp = self.session.get(self._url(f'projects'))
+        resp = self.session.get(self._url(f'projects'), timeout=10)
         return resp.json()
 
     def get_projects(self, customer_id):
-        resp = self.session.get(self._url(f'projects?customer={customer_id}'))
+        resp = self.session.get(self._url(f'projects?customer={customer_id}'), timeout=10)
         return resp.json()
 
     def get_activities(self, project_id):
-        resp = self.session.get(self._url(f'activities?project={project_id}'))
+        resp = self.session.get(self._url(f'activities?project={project_id}'), timeout=10)
         return resp.json()
