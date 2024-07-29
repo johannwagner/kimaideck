@@ -54,7 +54,7 @@ class StreamDeckPage:
     def render(self, deck):
         pass
 
-    def on_key_press(self, key_index, press_time):
+    def on_key_press(self, deck, key_index, press_time):
         pass
 
 
@@ -65,8 +65,9 @@ class PaginationStreamDeckPage(StreamDeckPage):
         self.index = 0
         self.elements = elements
 
-    def get_element_shard(self, index):
-        return self.elements[(index * 5):(index * 5) + 5]
+    def get_element_shard(self, deck, index):
+        max_elements = (deck.KEY_ROWS * deck.KEY_COLS) - 1
+        return self.elements[(index * max_elements):(index * max_elements) + max_elements]
 
     def render_index(self, deck, index, element):
         pass
@@ -75,20 +76,24 @@ class PaginationStreamDeckPage(StreamDeckPage):
         pass
 
     def render(self, deck):
-        elements = self.get_element_shard(self.index)
+        elements = self.get_element_shard(deck, self.index)
 
-        for index in range(5):
+        max_elements = deck.KEY_ROWS * deck.KEY_COLS
+
+        for index in range(max_elements - 1):
             if len(elements) > index:
                 element = elements[index]
                 self.render_index(deck, index, element)
             else:
                 deck.set_key_image(index, None)
 
-        self._render_simple_asset(deck, 5, './assets/next_plan.bmp')
+        self._render_simple_asset(deck, max_elements - 1, './assets/next_plan.bmp')
 
-    def on_key_press(self, key_index, press_time):
-        if key_index == 5 and press_time < 2000:
-            element_shard = self.get_element_shard(self.index + 1)
+    def on_key_press(self, deck, key_index, press_time):
+        action_key = (deck.KEY_ROWS * deck.KEY_COLS) - 1
+
+        if key_index == action_key and press_time < 2000:
+            element_shard = self.get_element_shard(deck, self.index + 1)
             if len(element_shard) == 0:
                 self.index = 0
                 logger.debug("Resetting index, index=0")
@@ -100,7 +105,7 @@ class PaginationStreamDeckPage(StreamDeckPage):
                 "action": "render"
             }
 
-        elif key_index == 5 and press_time >= 2000:
+        elif key_index == action_key and press_time >= 2000:
             logger.debug(f"Jumping back to DashStreamDeckPage...")
             return {
                 "action": "switch_page",
@@ -108,7 +113,7 @@ class PaginationStreamDeckPage(StreamDeckPage):
             }
         else:
             logger.debug(f"Element {key_index} pressed")
-            element_shard = self.get_element_shard(self.index)
+            element_shard = self.get_element_shard(deck, self.index)
             element = element_shard[key_index]
             return self.on_element_press(element)
 
@@ -188,25 +193,30 @@ class DashStreamDeckPage(StreamDeckPage):
 
             text = f"{str(rd.hours).zfill(2)}:{str(rd.minutes).zfill(2)}"
 
-            deck.set_key_image(0, None)
-            self._render_simple_text(deck, 1, active_tracking['activity']['name'])
-            self._render_simple_text(deck, 3, active_tracking['project']['customer']['name'])
-            self._render_simple_text(deck, 4, active_tracking['project']['name'])
+            elements = deck.KEY_ROWS * deck.KEY_COLS
 
-            self._render_simple_text(deck, 2, text)
-            self._render_simple_asset(deck, 5, './assets/stop_circle.bmp')
+            for element in range(elements - 5):
+                deck.set_key_image(element, None)
+
+            self._render_simple_text(deck, elements - 5, text)
+            self._render_simple_text(deck, elements - 4, active_tracking['activity']['name'])
+            self._render_simple_text(deck, elements - 3, active_tracking['project']['customer']['name'])
+            self._render_simple_text(deck, elements - 2, active_tracking['project']['name'])
+            self._render_simple_asset(deck, elements - 1, './assets/stop_circle.bmp')
         else:
             logger.debug("Time tracking is not active, showing start button")
-            deck.set_key_image(0, None)
-            deck.set_key_image(1, None)
-            deck.set_key_image(2, None)
-            deck.set_key_image(3, None)
-            deck.set_key_image(4, None)
-            self._render_simple_asset(deck, 5, './assets/play_circle.bmp')
 
-    def on_key_press(self, key_index, press_time):
+            elements = deck.KEY_ROWS * deck.KEY_COLS
+            for element in range(elements - 1):
+                deck.set_key_image(element, None)
 
-        if not key_index == 5:
+            self._render_simple_asset(deck, elements - 1, './assets/play_circle.bmp')
+
+
+    def on_key_press(self, deck, key_index, press_time):
+        action_key = (deck.KEY_ROWS * deck.KEY_COLS) - 1
+
+        if not key_index == action_key:
             return
 
         active_tracking = self.manager.kimai.get_active_timetracking()
@@ -258,7 +268,7 @@ class StreamDeckManager:
             elif state == False:  # Technically, button is up again
 
                 press_time = int((time.time() - self.key_down_timer[key]) * 1000)
-                res = self.current_deck_page.on_key_press(int(key), press_time)
+                res = self.current_deck_page.on_key_press(self.deck, int(key), press_time)
 
                 if res:
                     logger.debug(f"Key {key} does execute action {res['action']}")
