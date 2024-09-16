@@ -1,9 +1,11 @@
 import logging
+import math
 import threading
 import time
 import os
+from math import floor
 from zoneinfo import ZoneInfo
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import dateutil.relativedelta
 from StreamDeck.ImageHelpers import PILHelper
@@ -13,13 +15,22 @@ from kimaideck.kimai import Kimai
 
 logger = logging.getLogger(__name__)
 
+
 class StreamDeckPage:
 
     def __init__(self, manager):
         self.manager = manager
 
+    @property
+    def data_fetches_per_minute(self):
+        return 2
+
+    @property
+    def frames_per_minute(self):
+        return 2
+
     def _get_asset_path(self, rel_path):
-        script_dir = os.path.dirname(__file__) 
+        script_dir = os.path.dirname(__file__)
         abs_file_path = os.path.join(script_dir, rel_path)
         return abs_file_path
 
@@ -50,6 +61,9 @@ class StreamDeckPage:
         image = PILHelper.create_scaled_image(deck, icon, margins=[4, 4, 4, 4])
         key_image = PILHelper.to_native_format(deck, image)
         deck.set_key_image(index, key_image)
+
+    def fetch_data(self, deck):
+        pass
 
     def render(self, deck):
         pass
@@ -175,43 +189,74 @@ class ActivityStreamDeckPage(PaginationStreamDeckPage):
 
 
 class DashStreamDeckPage(StreamDeckPage):
+    active_tracking = False
+    last_activities = []
+    render_counter = 0
 
     def __init__(self, manager):
         super().__init__(manager)
 
-    def render(self, deck):
+        self.start_time = datetime.now()
 
+    @property
+    def frames_per_minute(self):
+        if not self.active_tracking:
+            return 60
+
+        return 2
+
+    def fetch_data(self, deck):
         logger.debug("Fetching active time tracking actions...")
-        active_tracking = self.manager.kimai.get_active_timetracking()
+        self.active_tracking = self.manager.kimai.get_active_timetracking()
+        self.last_activities = self.manager.kimai.get_last_activities()
 
-        if active_tracking:
-            logger.debug("Time tracking is active, showing information")
+    def render(self, deck):
+        self.render_counter += 1
 
-            dt1 = datetime.fromisoformat(active_tracking['begin'])
+        def render_minutes(minutes):
+            return f"{str(math.floor(minutes / 60)).zfill(2)}:{str(minutes % 60).zfill(2)}"
+
+        overall_worked_minutes = math.floor(sum([x['duration'] for x in self.last_activities]) / 60)
+        text_current = ""
+
+        if self.active_tracking:
+            dt1 = datetime.fromisoformat(self.active_tracking['begin'])
             dt2 = datetime.now(ZoneInfo("Europe/Berlin"))
-            rd = dateutil.relativedelta.relativedelta(dt2, dt1)
+            running_minutes = math.floor((dt2 - dt1).total_seconds() / 60)
+            overall_worked_minutes += running_minutes
+            text_current = render_minutes(running_minutes)
 
-            text = f"{str(rd.hours).zfill(2)}:{str(rd.minutes).zfill(2)}"
+        text_overall = render_minutes(overall_worked_minutes)
+
+        if self.active_tracking:
+            logger.debug("Time tracking is active, showing information")
 
             elements = deck.KEY_ROWS * deck.KEY_COLS
 
-            for element in range(elements - 5):
+            for element in range(elements - 6):
                 deck.set_key_image(element, None)
 
-            self._render_simple_text(deck, elements - 5, text)
-            self._render_simple_text(deck, elements - 4, active_tracking['activity']['name'])
-            self._render_simple_text(deck, elements - 3, active_tracking['project']['customer']['name'])
-            self._render_simple_text(deck, elements - 2, active_tracking['project']['name'])
+            self._render_simple_text(deck, elements - 6, text_overall)
+            self._render_simple_text(deck, elements - 5, text_current)
+            self._render_simple_text(deck, elements - 4, self.active_tracking['activity']['name'])
+            self._render_simple_text(deck, elements - 3, self.active_tracking['project']['customer']['name'])
+            self._render_simple_text(deck, elements - 2, self.active_tracking['project']['name'])
             self._render_simple_asset(deck, elements - 1, './assets/stop_circle.bmp')
         else:
             logger.debug("Time tracking is not active, showing start button")
 
             elements = deck.KEY_ROWS * deck.KEY_COLS
-            for element in range(elements - 1):
+            for element in range(elements - 2):
                 deck.set_key_image(element, None)
 
-            self._render_simple_asset(deck, elements - 1, './assets/play_circle.bmp')
+            # We should start flashing...
+            should_flash = self.start_time + timedelta(minutes=5) < datetime.now()
+            asset_path = './assets/play_circle_warning.bmp'\
+                if should_flash and self.render_counter % 2 == 0 \
+                else './assets/play_circle.bmp'
 
+            self._render_simple_text(deck, elements - 2, text_overall)
+            self._render_simple_asset(deck, elements - 1, asset_path)
 
     def on_key_press(self, deck, key_index, press_time):
         action_key = (deck.KEY_ROWS * deck.KEY_COLS) - 1
@@ -225,7 +270,7 @@ class DashStreamDeckPage(StreamDeckPage):
             self.manager.kimai.stop_timetracking(active_tracking['id'])
 
             return {
-                "action": "render"
+                "action": "reload"
             }
 
         else:
@@ -251,14 +296,16 @@ class StreamDeckManager:
 
         self.read_thread = threading.Thread(target=self.thread_render)
         self.read_thread.daemon = True
-
-        self.last_render = None
+        self.last_data_fetch = None
 
     def thread_render(self):
         while self.deck.run_read_thread:
-            if not self.last_render or time.time() - self.last_render > 30:
-                self.current_deck_page.render(self.deck)
-                self.last_render = time.time()
+            data_fetch_time = floor(60 / self.current_deck_page.data_fetches_per_minute)
+            if not self.last_data_fetch or time.time() - self.last_data_fetch > data_fetch_time:
+                self.current_deck_page.fetch_data(self.deck)
+                self.last_data_fetch = time.time()
+
+            self.current_deck_page.render(self.deck)
             time.sleep(1)
 
     def run(self):
@@ -272,11 +319,16 @@ class StreamDeckManager:
 
                 if res:
                     logger.debug(f"Key {key} does execute action {res['action']}")
+                    if res['action'] == "reload":
+                        self.current_deck_page.fetch_data(deck)
+                        self.current_deck_page.render(deck)
                     if res['action'] == "render":
                         self.current_deck_page.render(deck)
                     if res['action'] == "switch_page":
                         current_deck_page = res['page']
                         self.current_deck_page = current_deck_page
+                        self.last_data_fetch = None
+                        self.last_render = None
                         logger.debug(f"Switching to {current_deck_page.__class__}")
 
                         self.current_deck_page.render(deck)
@@ -285,4 +337,3 @@ class StreamDeckManager:
 
         self.deck.set_key_callback(key_change_callback)
         self.read_thread.start()
-

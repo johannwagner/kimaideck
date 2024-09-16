@@ -1,5 +1,6 @@
 import urllib.parse
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -18,11 +19,18 @@ class Kimai:
         return urllib.parse.urljoin(self.base_url, path)
 
     def get_active_timetracking(self):
-        resp = self.session.get(self._url('timesheets/active/'), timeout=10)
+        resp = self.session.get(self._url('timesheets/active'), timeout=10)
         active_list = resp.json()
         if len(active_list) > 0:
             return active_list[0]
         return None
+
+    def get_last_activities(self):
+
+        start_time = datetime.now(ZoneInfo("Europe/Berlin"))
+        resp = self.session.get(self._url(f'timesheets?begin={str(start_time.year).zfill(4)}-{str(start_time.month).zfill(2)}-{str(start_time.day).zfill(2)}T00:00:00'), timeout=10)
+
+        return resp.json()
 
 
     def start_timetracking(self, project_id, activity_id):
