@@ -11,7 +11,7 @@ include = ["kimaideck/assets"]
 [tool.poetry.dependencies]
 python = "^3.11"
 streamdeck = "^0.9.5"
-pillow = "^10.0.0"
+pillow = "^11.0.0"
 requests = "^2.31.0"
 pyyaml = "^6.0.1"
 python-dateutil = "^2.8.2"
